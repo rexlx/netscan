@@ -13,6 +13,12 @@ type ScannerConfig struct {
 	ResultChan chan int
 }
 
+type ScannedResult struct {
+	Time    time.Time `json:"time"`
+	Address string    `json:"address"`
+	Ports   []int     `json:"ports"`
+}
+
 func Scanner(cfg *ScannerConfig) {
 	for {
 		select {

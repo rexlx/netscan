@@ -71,12 +71,27 @@ func main() {
 				app.Mux.Unlock()
 			case <-time.After(19 * time.Second):
 				fmt.Println("Timeout")
+				if len(app.AddressManifest[addr]) > 0 {
+					app.Mux.Lock()
+					scannedRes := ScannedResult{
+						Time:    time.Now(),
+						Address: addr,
+						Ports:   app.AddressManifest[addr],
+					}
+					app.Mux.Unlock()
+					fmt.Println("Saving to firestore")
+					ctx := context.Background()
+					_, err := client.Collection("lanscan").Doc(scannedRes.Address).Set(ctx, scannedRes)
+					if err != nil {
+						panic(err)
+					}
+				}
 				break meanWhile
 			}
 		}
 	}
 
 	fmt.Println("scan complete")
-	docName := time.Now().Format(app.TimeLayout)
-	app.SaveManifestToFireStore("lanscan", docName)
+	// docName := time.Now().Format(app.TimeLayout)
+	// app.SaveManifestToFireStore("lanscan", docName)
 }
