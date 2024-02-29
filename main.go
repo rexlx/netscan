@@ -17,7 +17,7 @@ import (
 type Program struct {
 	LastPort        int
 	Project         string
-	AddressManifest map[netip.Addr][]int
+	AddressManifest map[string][]int
 	Firestore       *firestore.Client
 	Mux             *sync.RWMutex
 	PortChan        chan int
@@ -61,7 +61,7 @@ func main() {
 		fmt.Println(addr)
 		var sc ScannerConfig
 		sc.Wait = *wait
-		sc.Address = addr.String()
+		sc.Address = addr
 		sc.PortChan = app.PortChan
 		sc.ResultChan = app.ResultChan
 		for i := 0; i < *workers; i++ {
@@ -82,7 +82,7 @@ func main() {
 				app.Mux.Lock()
 				app.AddressManifest[addr] = append(app.AddressManifest[addr], res)
 				app.Mux.Unlock()
-			case <-time.After(9 * time.Second):
+			case <-time.After(19 * time.Second):
 				fmt.Println("Timeout")
 				break meanWhile
 			}
@@ -90,15 +90,11 @@ func main() {
 	}
 
 	fmt.Println("moving on")
-	for addr, ports := range app.AddressManifest {
-		if len(ports) > 0 {
-			println(addr.String(), ports)
-		}
-	}
+	app.SaveManifestToFireStore("lanscan", "today")
 }
 
 func NewProgram(project string) *Program {
-	manifest := make(map[netip.Addr][]int)
+	manifest := make(map[string][]int)
 	mux := sync.RWMutex{}
 	portChan := make(chan int, 1000)
 	resultChan := make(chan int, 1000)
@@ -115,8 +111,8 @@ func NewProgram(project string) *Program {
 func (p *Program) AddAddress(addr netip.Addr) {
 	p.Mux.Lock()
 	defer p.Mux.Unlock()
-	if _, ok := p.AddressManifest[addr]; !ok {
-		p.AddressManifest[addr] = []int{}
+	if _, ok := p.AddressManifest[addr.String()]; !ok {
+		p.AddressManifest[addr.String()] = []int{}
 	}
 
 }
@@ -141,5 +137,14 @@ func (p *Program) GetRecordsFromFireStore() {
 			}
 			p.AddAddress(a)
 		}
+	}
+}
+
+func (p *Program) SaveManifestToFireStore(col string, doc string) {
+	fmt.Println("Saving to firestore")
+	ctx := context.Background()
+	_, err := p.Firestore.Collection(col).Doc(doc).Set(ctx, p.AddressManifest)
+	if err != nil {
+		panic(err)
 	}
 }
