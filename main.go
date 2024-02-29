@@ -11,16 +11,17 @@ import (
 )
 
 var (
-	project = flag.String("project", "plated-dryad-148318", "Project name")
-	workers = flag.Int("workers", 100, "Number of workers")
-	wait    = flag.Int("wait", 100, "Wait time")
+	project  = flag.String("project", "tight-knit-666666", "firestore project id")
+	workers  = flag.Int("workers", 100, "number of workers")
+	wait     = flag.Int("wait", 100, "how long to wait for a port to respond in ms")
+	credFile = flag.String("cred", "/Users/rxlx/bin/data/fbase.json", "credential file")
 )
 
 func main() {
 	flag.Parse()
 
 	ctx := context.Background()
-	sa := option.WithCredentialsFile("/Users/rxlx/bin/data/fbase.json")
+	sa := option.WithCredentialsFile(*credFile)
 
 	fb, err := firebase.NewApp(ctx, &firebase.Config{
 		ProjectID: *project,
