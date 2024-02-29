@@ -4,32 +4,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"net/netip"
-	"strings"
-	"sync"
 	"time"
 
-	"cloud.google.com/go/firestore"
 	firebase "firebase.google.com/go"
 	"google.golang.org/api/option"
 )
-
-type Program struct {
-	LastPort        int
-	Project         string
-	AddressManifest map[string][]int
-	Firestore       *firestore.Client
-	Mux             *sync.RWMutex
-	PortChan        chan int
-	ResultChan      chan int
-}
-
-type Stat struct {
-	Value []float64     `json:"value"`
-	Time  time.Time     `json:"time"`
-	ID    string        `json:"id"`
-	Extra []interface{} `json:"extra"`
-}
 
 var (
 	project = flag.String("project", "plated-dryad-148318", "Project name")
@@ -39,41 +18,48 @@ var (
 
 func main() {
 	flag.Parse()
-	app := NewProgram(*project)
+
 	ctx := context.Background()
 	sa := option.WithCredentialsFile("/Users/rxlx/bin/data/fbase.json")
+
 	fb, err := firebase.NewApp(ctx, &firebase.Config{
 		ProjectID: *project,
 	}, sa)
-
 	if err != nil {
 		panic(err)
 	}
+
 	client, err := fb.Firestore(ctx)
 	if err != nil {
 		panic(err)
 	}
+
 	defer client.Close()
+
+	app := NewProgram(*project)
 	app.Firestore = client
 
 	app.GetRecordsFromFireStore()
+
 	for addr, _ := range app.AddressManifest {
-		fmt.Println(addr)
 		var sc ScannerConfig
 		sc.Wait = *wait
 		sc.Address = addr
 		sc.PortChan = app.PortChan
 		sc.ResultChan = app.ResultChan
+
 		for i := 0; i < *workers; i++ {
 			go Scanner(&sc)
 		}
+
 		go func() {
 			for i := 1; i <= app.LastPort; i++ {
 				sc.PortChan <- i
 			}
 		}()
+
 		fmt.Println("Waiting for workers to finish")
-		// close(sc.PortChan)
+
 	meanWhile:
 		for {
 			select {
@@ -89,62 +75,7 @@ func main() {
 		}
 	}
 
-	fmt.Println("moving on")
-	app.SaveManifestToFireStore("lanscan", "today")
-}
-
-func NewProgram(project string) *Program {
-	manifest := make(map[string][]int)
-	mux := sync.RWMutex{}
-	portChan := make(chan int, 1000)
-	resultChan := make(chan int, 1000)
-	return &Program{
-		Project:         project,
-		AddressManifest: manifest,
-		Mux:             &mux,
-		PortChan:        portChan,
-		ResultChan:      resultChan,
-		LastPort:        65535,
-	}
-}
-
-func (p *Program) AddAddress(addr netip.Addr) {
-	p.Mux.Lock()
-	defer p.Mux.Unlock()
-	if _, ok := p.AddressManifest[addr.String()]; !ok {
-		p.AddressManifest[addr.String()] = []int{}
-	}
-
-}
-
-func (p *Program) GetRecordsFromFireStore() {
-	ctx := context.Background()
-	query := p.Firestore.Collection("lan-access.log").OrderBy("Time", firestore.Desc).Limit(25)
-	iter := query.Documents(ctx)
-	for {
-		var stat Stat
-		doc, err := iter.Next()
-		if err != nil {
-			break
-		}
-		doc.DataTo(&stat)
-		ipString := stat.Extra[0].(string)
-		addrs := strings.Split(ipString, " ")
-		for _, addr := range addrs {
-			a, err := netip.ParseAddr(addr)
-			if err != nil {
-				continue
-			}
-			p.AddAddress(a)
-		}
-	}
-}
-
-func (p *Program) SaveManifestToFireStore(col string, doc string) {
-	fmt.Println("Saving to firestore")
-	ctx := context.Background()
-	_, err := p.Firestore.Collection(col).Doc(doc).Set(ctx, p.AddressManifest)
-	if err != nil {
-		panic(err)
-	}
+	fmt.Println("scan complete")
+	docName := time.Now().Format(app.TimeLayout)
+	app.SaveManifestToFireStore("lanscan", docName)
 }
